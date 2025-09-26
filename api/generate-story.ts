@@ -1,19 +1,6 @@
 import { VercelRequest, VercelResponse } from '@vercel/node';
 import { GoogleGenAI, Type } from '@google/genai';
-import { StoryStructure, StoryData, GeneratedPage, StoryScene } from '../types';
-
-// Helper function to get the base64 data of an image from a URL
-async function urlToGenerativePart(url: string, mimeType: string) {
-  const response = await fetch(url);
-  const buffer = await response.arrayBuffer();
-  const base64 = Buffer.from(buffer).toString('base64');
-  return {
-    inlineData: {
-      data: base64,
-      mimeType,
-    },
-  };
-}
+import { StoryStructure, StoryData, GeneratedPage, StoryScene } from './types';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') {
