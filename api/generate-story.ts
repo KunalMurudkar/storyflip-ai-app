@@ -1,6 +1,48 @@
 import { VercelRequest, VercelResponse } from '@vercel/node';
 import { GoogleGenAI, Type } from '@google/genai';
 import { StoryStructure, StoryData, GeneratedPage } from './types';
+import fetch from 'node-fetch';
+
+/**
+ * Queries the Hugging Face Inference API to generate an image from a text prompt.
+ * Includes a retry mechanism for when the model is loading (HTTP 503).
+ * @param data The prompt to send to the model.
+ * @param retries The number of retries left.
+ * @returns A Buffer containing the raw image data.
+ */
+async function queryHuggingFace(data: { inputs: string }, retries = 3): Promise<Buffer> {
+    const HUGGING_FACE_API_KEY = process.env.HUGGING_FACE_API_KEY;
+    if (!HUGGING_FACE_API_KEY) {
+        throw new Error("Server configuration error: Missing HUGGING_FACE_API_KEY.");
+    }
+    const MODEL_URL = "https://api-inference.huggingface.co/models/stabilityai/stable-diffusion-xl-base-1.0";
+    
+    const response = await fetch(MODEL_URL, {
+        headers: {
+            "Authorization": `Bearer ${HUGGING_FACE_API_KEY}`,
+            "Content-Type": "application/json",
+        },
+        method: "POST",
+        body: JSON.stringify(data),
+    });
+
+    // If the model is loading, wait and retry.
+    if (response.status === 503 && retries > 0) {
+        console.warn("Hugging Face model is loading, retrying in 15 seconds...");
+        await new Promise(res => setTimeout(res, 15000));
+        return queryHuggingFace(data, retries - 1);
+    }
+
+    if (!response.ok) {
+        const errorText = await response.text();
+        console.error("Hugging Face API Error:", errorText);
+        throw new Error(`Failed to generate image with Hugging Face. Status: ${response.status}, Message: ${errorText}`);
+    }
+
+    const arrayBuffer = await response.arrayBuffer();
+    return Buffer.from(arrayBuffer);
+}
+
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') {
@@ -21,7 +63,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         return res.status(400).json({ message: 'Missing required fields: prompt, style, personalization, pageCount.' });
     }
 
-    // == Step 1: Generate the story structure JSON ==
+    // == Step 1: Generate the story structure JSON with Gemini ==
     const storySchema = {
       type: Type.OBJECT,
       properties: {
@@ -67,30 +109,25 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         return res.status(500).json({ message: "The AI storyteller got confused. Please try a different prompt." });
     }
 
-    // == Step 2: Generate all images concurrently for speed ==
-    const coverImagePrompt = `A beautiful and captivating book cover for a story titled "${storyStructure.title}". Style: ${style}. Featuring: ${storyStructure.characterDescriptions}. The cover should be vibrant and inviting for a child, without any text.`;
+    // == Step 2: Generate all images concurrently with Hugging Face ==
+    const coverImagePrompt = `A beautiful and captivating book cover for a story titled "${storyStructure.title}". Style: ${style}. Featuring: ${storyStructure.characterDescriptions}. The cover should be vibrant and inviting for a child, without any text. high quality, detailed.`;
     
     const imagePrompts = [
       coverImagePrompt,
-      ...storyStructure.scenes.map(scene => `${scene.imagePrompt}. Style: ${style}. Characters: ${storyStructure.characterDescriptions}`)
+      ...storyStructure.scenes.map(scene => `${scene.imagePrompt}. Style: ${style}. Characters: ${storyStructure.characterDescriptions}. high quality, detailed.`)
     ];
 
-    const imageGenerationPromises = imagePrompts.map(p => ai.models.generateImages({
-        model: 'imagen-4.0-generate-001',
-        prompt: p,
-        config: { numberOfImages: 1, outputMimeType: 'image/jpeg', aspectRatio: '4:3' }
-    }));
-
+    const imageGenerationPromises = imagePrompts.map(p => queryHuggingFace({ inputs: p }));
     const imageResults = await Promise.all(imageGenerationPromises);
 
-    const generatedImages = imageResults.map((res, index) => {
-        if (!res?.generatedImages?.[0]?.image?.imageBytes) {
-            console.error(`Image generation failed for prompt: "${imagePrompts[index]}"`, res);
-            throw new Error("Failed to generate a required illustration for the story.");
+    const generatedImages = imageResults.map((buffer, index) => {
+        if (!buffer || buffer.length === 0) {
+            console.error(`Image generation failed for prompt: "${imagePrompts[index]}"`);
+            throw new Error("Failed to generate a required illustration for the story from Hugging Face.");
         }
-        return `data:image/jpeg;base64,${res.generatedImages[0].image.imageBytes}`;
+        return `data:image/jpeg;base64,${buffer.toString('base64')}`;
     });
-
+    
     const [coverImageUrl, ...sceneImageUrls] = generatedImages;
 
     const pages: GeneratedPage[] = storyStructure.scenes.map((scene, index) => ({
