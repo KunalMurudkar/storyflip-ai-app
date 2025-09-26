@@ -7,8 +7,6 @@ import { StoryData } from './types';
 import { generatePdfBlob } from './services/pdfService';
 import { createHeyzineFlipbook } from './services/heyzineService';
 import { generateStoryAndImages } from './services/geminiService';
-import { STORY_LENGTHS } from './constants';
-
 
 const PDF_CONTAINER_ID = 'pdf-content-container';
 
@@ -20,26 +18,29 @@ const App: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    // This effect triggers once the story and images are generated and ready in the DOM.
     if (storyData && !flipbookUrl && isLoading) {
       const createFlipbook = async () => {
         try {
-          // This useEffect runs after the DOM is updated, so the <PdfContent> component is available
-          setLoadingMessage('Preparing your storybook pages...');
-          const pdfBlob = await generatePdfBlob(PDF_CONTAINER_ID, storyData.title);
+          setLoadingMessage('Assembling the storybook pages...');
+          const pdfBlob = await generatePdfBlob(PDF_CONTAINER_ID);
           
-          setLoadingMessage('Uploading to our magical flipbook creator...');
+          setLoadingMessage('Sending your book to the magical press...');
           const url = await createHeyzineFlipbook(pdfBlob, storyData.title);
           setFlipbookUrl(url);
 
         } catch (err) {
           console.error(err);
-          setError(err instanceof Error ? err.message : 'An unknown error occurred while creating the flipbook.');
+          const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred while creating the flipbook.';
+          setError(`Something went wrong during the final step. ${errorMessage}`);
         } finally {
           setIsLoading(false);
           setLoadingMessage('');
         }
       };
-      createFlipbook();
+      // A small timeout allows the off-screen PdfContent component to fully render before we capture it.
+      const timer = setTimeout(createFlipbook, 100); 
+      return () => clearTimeout(timer);
     }
   }, [storyData, flipbookUrl, isLoading]);
 
@@ -51,10 +52,11 @@ const App: React.FC = () => {
 
     try {
       const data = await generateStoryAndImages(prompt, style, length, personalization, setLoadingMessage);
-      setStoryData(data); // This will trigger the useEffect to create the PDF and flipbook
+      setStoryData(data); // This triggers the useEffect to create the PDF and flipbook
     } catch (err) {
         console.error(err);
-        setError(err instanceof Error ? err.message : 'An unknown error occurred while generating the story.');
+        const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred while generating the story.';
+        setError(errorMessage);
         setIsLoading(false);
     }
   };
@@ -91,8 +93,8 @@ const App: React.FC = () => {
           <PdfContent story={storyData} containerId={PDF_CONTAINER_ID} />
         )}
 
-        {error && (
-          <div className="text-center p-8 bg-white rounded-lg shadow-lg">
+        {error && !isLoading && (
+          <div className="text-center p-8 bg-white rounded-lg shadow-lg max-w-2xl mx-auto">
             <h2 className="text-2xl font-bold text-red-500 mb-4">Oh no, a plot twist!</h2>
             <p className="text-slate-600 mb-6">{error}</p>
             <button

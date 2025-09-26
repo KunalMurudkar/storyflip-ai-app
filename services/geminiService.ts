@@ -1,7 +1,6 @@
 import { StoryData } from '../types';
 import { STORY_LENGTHS } from '../constants';
 
-// This function now calls our own backend, not Google's directly.
 export const generateStoryAndImages = async (
   prompt: string,
   style: string,
@@ -10,8 +9,7 @@ export const generateStoryAndImages = async (
   setLoadingMessage: (message: string) => void
 ): Promise<StoryData> => {
   
-  setLoadingMessage('Asking the storyteller for a new idea...');
-
+  setLoadingMessage('Waking up the storyteller AI...');
   const pageCount = STORY_LENGTHS[length] || 4;
   
   const response = await fetch('/api/generate-story', {
@@ -19,14 +17,17 @@ export const generateStoryAndImages = async (
     headers: {
         'Content-Type': 'application/json',
     },
-    body: JSON.stringify({ prompt, style, personalization, pageCount }),
+    body: JSON.stringify({ prompt, style, personalization, pageCount, setLoadingMessage }),
   });
 
+  setLoadingMessage('Dreaming up characters and adventures...');
+
   if (!response.ok) {
-    const errorResult = await response.json();
-    throw new Error(errorResult.message || "The story couldn't be generated.");
+    const errorResult = await response.json().catch(() => ({ message: "The story couldn't be generated due to a server error." }));
+    throw new Error(errorResult.message);
   }
 
+  setLoadingMessage('Painting the illustrations...');
   const storyData: StoryData = await response.json();
   return storyData;
 };

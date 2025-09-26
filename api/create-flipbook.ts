@@ -1,6 +1,3 @@
-// This is a Vercel Serverless Function
-// It runs on the backend and is never exposed to the client.
-
 import { VercelRequest, VercelResponse } from '@vercel/node';
 import fetch from 'node-fetch';
 import FormData from 'form-data';
@@ -17,14 +14,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const apiKey = process.env.HEYZINE_API_KEY;
 
     if (!apiKey) {
-      return res.status(500).json({ message: 'Heyzine API key is not configured on the server.' });
+      console.error('HEYZINE_API_KEY is not configured on the server.');
+      return res.status(500).json({ message: 'Flipbook service is not configured correctly.' });
     }
 
     if (!pdfData || !title) {
-      return res.status(400).json({ message: 'Missing pdfData or title in the request.' });
+      return res.status(400).json({ message: 'Missing PDF data or title in the request.' });
     }
 
-    // Convert base64 PDF data back to a buffer
     const pdfBuffer = Buffer.from(pdfData, 'base64');
 
     const formData = new FormData();
@@ -39,17 +36,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       body: formData,
     });
 
-    // FIX: Cast the JSON response to `any` to safely access potential properties like 'message' on error responses.
     const result: any = await heyzineResponse.json();
 
     if (!heyzineResponse.ok) {
-      throw new Error(result.message || 'Heyzine API error');
+      console.error("Heyzine API Error:", result);
+      throw new Error(result.message || 'The flipbook service returned an error.');
     }
 
     res.status(200).json(result);
 
   } catch (error) {
     console.error("Failed to create Heyzine flipbook:", error);
-    res.status(500).json({ message: 'An error occurred while creating the flipbook.' });
+    const message = error instanceof Error ? error.message : 'An unknown error occurred.';
+    res.status(500).json({ message: `An error occurred while creating the flipbook: ${message}` });
   }
 }

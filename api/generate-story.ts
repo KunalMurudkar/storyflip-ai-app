@@ -1,6 +1,6 @@
 import { VercelRequest, VercelResponse } from '@vercel/node';
 import { GoogleGenAI, Type } from '@google/genai';
-import { StoryStructure, StoryData, GeneratedPage, StoryScene } from './types';
+import { StoryStructure, StoryData, GeneratedPage } from './types';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') {
@@ -8,31 +8,32 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
     
   try {
-    if (!process.env.API_KEY) {
-      return res.status(500).json({ message: "API_KEY environment variable not set on the server" });
+    const apiKey = process.env.API_KEY;
+    if (!apiKey) {
+      console.error("API_KEY environment variable not set");
+      return res.status(500).json({ message: "Server configuration error: Missing API Key." });
     }
     
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+    const ai = new GoogleGenAI({ apiKey });
 
     const { prompt, style, personalization, pageCount } = req.body;
-
     if (!prompt || !style || !personalization || !pageCount) {
         return res.status(400).json({ message: 'Missing required fields: prompt, style, personalization, pageCount.' });
     }
 
-    // Step 1: Generate the story structure
+    // == Step 1: Generate the story structure JSON ==
     const storySchema = {
       type: Type.OBJECT,
       properties: {
-        title: { type: Type.STRING },
-        characterDescriptions: { type: Type.STRING },
+        title: { type: Type.STRING, description: "A creative, short title for the story." },
+        characterDescriptions: { type: Type.STRING, description: "A consistent, detailed visual description of the main character(s) to be used in every image prompt." },
         scenes: {
           type: Type.ARRAY,
           items: {
             type: Type.OBJECT,
             properties: {
-              pageText: { type: Type.STRING },
-              imagePrompt: { type: Type.STRING },
+              pageText: { type: Type.STRING, description: "One to two paragraphs of the story for this scene." },
+              imagePrompt: { type: Type.STRING, description: "A detailed visual prompt for an illustration of this scene, referencing the character descriptions." },
             },
             required: ['pageText', 'imagePrompt']
           },
@@ -42,11 +43,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     };
     
     const storyPrompt = `Create a short story for a child.
-      Topic: ${prompt}
-      Personalization: ${personalization}
-      The story should have exactly ${pageCount} scenes.
+      Primary subject: ${prompt}
+      Incorporate this personalization: ${personalization}
+      The story must have exactly ${pageCount} scenes.
       For each scene, provide the story text and a detailed image prompt in a ${style} style that describes the scene visually.
-      The image prompts must maintain character consistency. Use the 'characterDescriptions' field to first describe the main characters, and then reference those descriptions in each scene's image prompt to ensure the characters look the same in every picture.`;
+      The image prompts MUST maintain character consistency. First, describe the main characters in the 'characterDescriptions' field. Then, reference those descriptions in each scene's 'imagePrompt' to ensure the characters look the same in every picture.`;
 
     const storyResponse = await ai.models.generateContent({
         model: "gemini-2.5-flash",
@@ -57,33 +58,40 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         },
     });
 
-    const storyStructure: StoryStructure = JSON.parse(storyResponse.text);
+    let storyStructure: StoryStructure;
+    try {
+        if (!storyResponse.text) throw new Error("Received empty response from story generator.");
+        storyStructure = JSON.parse(storyResponse.text);
+    } catch (e) {
+        console.error("Failed to parse story structure JSON:", storyResponse.text, e);
+        return res.status(500).json({ message: "The AI storyteller got confused. Please try a different prompt." });
+    }
 
-    // Step 2: Generate all images concurrently for speed and consistency
-    const coverImagePrompt = `A beautiful and captivating book cover for a story titled "${storyStructure.title}". Style: ${style}. Characters: ${storyStructure.characterDescriptions}. The cover should be vibrant and inviting for a child.`;
-
-    const imageGenerationPromises = [
-        ai.models.generateImages({
-            model: 'imagen-4.0-generate-001',
-            prompt: coverImagePrompt,
-            config: { numberOfImages: 1, outputMimeType: 'image/jpeg', aspectRatio: '4:3' }
-        }),
-        ...storyStructure.scenes.map(scene => ai.models.generateImages({
-            model: 'imagen-4.0-generate-001',
-            prompt: `${scene.imagePrompt}. Style: ${style}. Characters: ${storyStructure.characterDescriptions}`,
-            config: { numberOfImages: 1, outputMimeType: 'image/jpeg', aspectRatio: '4:3' }
-        }))
+    // == Step 2: Generate all images concurrently for speed ==
+    const coverImagePrompt = `A beautiful and captivating book cover for a story titled "${storyStructure.title}". Style: ${style}. Featuring: ${storyStructure.characterDescriptions}. The cover should be vibrant and inviting for a child, without any text.`;
+    
+    const imagePrompts = [
+      coverImagePrompt,
+      ...storyStructure.scenes.map(scene => `${scene.imagePrompt}. Style: ${style}. Characters: ${storyStructure.characterDescriptions}`)
     ];
+
+    const imageGenerationPromises = imagePrompts.map(p => ai.models.generateImages({
+        model: 'imagen-4.0-generate-001',
+        prompt: p,
+        config: { numberOfImages: 1, outputMimeType: 'image/jpeg', aspectRatio: '4:3' }
+    }));
 
     const imageResults = await Promise.all(imageGenerationPromises);
 
-    const generatedImages = imageResults.map(res => {
-        const base64Image = res.generatedImages[0].image.imageBytes;
-        return `data:image/jpeg;base64,${base64Image}`;
+    const generatedImages = imageResults.map((res, index) => {
+        if (!res?.generatedImages?.[0]?.image?.imageBytes) {
+            console.error(`Image generation failed for prompt: "${imagePrompts[index]}"`, res);
+            throw new Error("Failed to generate a required illustration for the story.");
+        }
+        return `data:image/jpeg;base64,${res.generatedImages[0].image.imageBytes}`;
     });
 
-    const coverImageUrl = generatedImages[0];
-    const sceneImageUrls = generatedImages.slice(1);
+    const [coverImageUrl, ...sceneImageUrls] = generatedImages;
 
     const pages: GeneratedPage[] = storyStructure.scenes.map((scene, index) => ({
       text: scene.pageText,
@@ -100,6 +108,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   } catch (error) {
     console.error("Error in generate-story endpoint:", error);
-    res.status(500).json({ message: 'An error occurred while generating the story.' });
+    const message = error instanceof Error ? error.message : 'An unknown error occurred.';
+    res.status(500).json({ message: `An error occurred while generating the story: ${message}` });
   }
 }

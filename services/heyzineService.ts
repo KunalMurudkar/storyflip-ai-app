@@ -3,9 +3,11 @@ const blobToBase64 = (blob: Blob): Promise<string> => {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onloadend = () => {
-      // result is a data URL like "data:application/pdf;base64,..."
-      // We only want the base64 part after the comma.
       const base64String = (reader.result as string).split(',')[1];
+      if (!base64String) {
+        reject(new Error("Failed to convert PDF blob to base64."));
+        return;
+      }
       resolve(base64String);
     };
     reader.onerror = reject;
@@ -26,15 +28,18 @@ export const createHeyzineFlipbook = async (pdfBlob: Blob, title: string): Promi
     });
 
     if (!response.ok) {
-      const errorData = await response.json();
+      const errorData = await response.json().catch(() => ({message: "The flipbook creator returned an unexpected error."}));
       throw new Error(`Failed to create flipbook: ${errorData.message || response.statusText}`);
     }
 
     const result = await response.json();
+    if (!result.url) {
+        throw new Error("Flipbook was created, but the URL was not provided.");
+    }
     return result.url;
 
   } catch (error) {
     console.error("Error in createHeyzineFlipbook service:", error);
-    throw new Error("Could not connect to the flipbook creation service. Please try again.");
+    throw error; // Re-throw the original error to be caught by the UI
   }
 };

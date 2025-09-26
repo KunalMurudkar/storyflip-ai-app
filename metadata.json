@@ -1,5 +1,5 @@
 {
-  "name": "Copy of StoryFlip AI",
-  "description": "An AI-powered application that generates personalized, illustrated storybooks for children. Users can provide a prompt, choose an illustration style, and receive a complete flipbook that can be downloaded as a PDF.",
+  "name": "StoryFlip AI",
+  "description": "An AI-powered application that generates personalized, illustrated storybooks for children. Users can provide a prompt, choose an illustration style, and receive a complete flipbook.",
   "requestFramePermissions": []
 }

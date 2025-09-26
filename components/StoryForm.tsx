@@ -1,4 +1,3 @@
-
 import React, { useState } from 'react';
 import { ILLUSTRATION_STYLES, STORY_LENGTHS } from '../constants';
 
@@ -8,13 +7,14 @@ interface StoryFormProps {
 
 export const StoryForm: React.FC<StoryFormProps> = ({ onGenerate }) => {
   const [prompt, setPrompt] = useState('A brave squirrel who is afraid of heights');
-  const [style, setStyle] = useState('Cartoon');
-  const [length, setLength] = useState('Short');
+  const [style, setStyle] = useState("Children's Book Illustration");
+  const [length, setLength] = useState('Short (4 pages)');
   const [personalization, setPersonalization] = useState('The squirrel loves collecting shiny acorns');
   const [isGenerating, setIsGenerating] = useState(false);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    if (isGenerating) return;
     setIsGenerating(true);
     onGenerate(prompt, style, length, personalization);
   };
