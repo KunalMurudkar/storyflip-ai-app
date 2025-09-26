@@ -1,6 +1,6 @@
 import { VercelRequest, VercelResponse } from '@vercel/node';
-import fetch from 'node-fetch';
 import FormData from 'form-data';
+import fetch from 'node-fetch';
 
 const HEYZINE_API_URL = 'https://heyzine.com/api/v1/flipbooks';
 

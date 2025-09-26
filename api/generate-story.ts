@@ -39,7 +39,9 @@ async function queryHuggingFace(data: { inputs: string }, retries = 3): Promise<
         throw new Error(`Failed to generate image with Hugging Face. Status: ${response.status}, Message: ${errorText}`);
     }
 
-    const arrayBuffer = await response.arrayBuffer();
+    // The response from Hugging Face for image generation is binary data (the image itself).
+    // We need to read it as an ArrayBuffer.
+    const arrayBuffer = await (response as any).arrayBuffer();
     return Buffer.from(arrayBuffer);
 }
 
