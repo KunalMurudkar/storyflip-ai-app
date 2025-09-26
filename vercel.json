@@ -1,0 +1,10 @@
+{
+  "functions": {
+    "api/generate-story.ts": {
+      "maxDuration": 60
+    },
+    "api/create-flipbook.ts": {
+      "maxDuration": 30
+    }
+  }
+}

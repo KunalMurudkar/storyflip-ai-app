@@ -12,18 +12,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(405).json({ message: 'Method Not Allowed' });
   }
 
-  const { pdfData, title } = req.body;
-  const apiKey = process.env.HEYZINE_API_KEY;
-
-  if (!apiKey) {
-    return res.status(500).json({ message: 'Heyzine API key is not configured on the server.' });
-  }
-
-  if (!pdfData || !title) {
-    return res.status(400).json({ message: 'Missing pdfData or title in the request.' });
-  }
-
   try {
+    const { pdfData, title } = req.body;
+    const apiKey = process.env.HEYZINE_API_KEY;
+
+    if (!apiKey) {
+      return res.status(500).json({ message: 'Heyzine API key is not configured on the server.' });
+    }
+
+    if (!pdfData || !title) {
+      return res.status(400).json({ message: 'Missing pdfData or title in the request.' });
+    }
+
     // Convert base64 PDF data back to a buffer
     const pdfBuffer = Buffer.from(pdfData, 'base64');
 
@@ -39,7 +39,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       body: formData,
     });
 
-    const result = await heyzineResponse.json();
+    // FIX: Cast the JSON response to `any` to safely access potential properties like 'message' on error responses.
+    const result: any = await heyzineResponse.json();
 
     if (!heyzineResponse.ok) {
       throw new Error(result.message || 'Heyzine API error');

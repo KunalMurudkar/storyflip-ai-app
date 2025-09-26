@@ -7,15 +7,19 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(405).json({ message: 'Method Not Allowed' });
   }
     
-  if (!process.env.API_KEY) {
-    return res.status(500).json({ message: "API_KEY environment variable not set on the server" });
-  }
-  
-  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-
-  const { prompt, style, personalization, pageCount } = req.body;
-  
   try {
+    if (!process.env.API_KEY) {
+      return res.status(500).json({ message: "API_KEY environment variable not set on the server" });
+    }
+    
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+
+    const { prompt, style, personalization, pageCount } = req.body;
+
+    if (!prompt || !style || !personalization || !pageCount) {
+        return res.status(400).json({ message: 'Missing required fields: prompt, style, personalization, pageCount.' });
+    }
+
     // Step 1: Generate the story structure
     const storySchema = {
       type: Type.OBJECT,
